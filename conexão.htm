@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa de Relacionamentos de Personagens</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0d0f12;
+            --panel-bg: rgba(20, 24, 30, 0.75);
+            --accent: #c4a173; /* Ouro envelhecido */
+            --alliance: #10b981; /* Verde/Azul para alianças */
+            --conflict: #ef4444; /* Vermelho para conflitos */
+            --secret: #a855f7;   /* Roxo para segredos */
+            --blood: #f97316;    /* Laranja para laços de sangue */
+        }
+
+        body {
+            font-family: 'Merriweather', serif;
+            background-color: var(--bg-color);
+            color: #e2e8f0;
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            /* Textura de fundo estilo mistério */
+            background-image: 
+                radial-gradient(circle at 50% 50%, #1f2533 0%, #0d0f12 100%),
+                url('data:image/svg+xml;utf8,<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><filter id="noise"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23noise)" opacity="0.04"/></svg>');
+            background-attachment: fixed;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Container do Vis.js */
+        #mynetwork {
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+
+        /* Custom Scrollbar para o painel */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.2); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent); 
+            border-radius: 4px;
+        }
+
+        /* Estilo para a legenda */
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .legend-line {
+            width: 20px;
+            height: 3px;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        .legend-line.dashed {
+            border-bottom: 2px dashed var(--secret);
+            background: transparent;
+            height: 0;
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 flex flex-col h-screen">
+
+    <!-- Header -->
+    <header class="text-center mb-4 flex-shrink-0">
+        <h1 class="text-2xl sm:text-3xl font-light tracking-wide text-white">
+            Teia de <span class="text-[#c4a173] italic">Intrigas</span>
+        </h1>
+        <p class="text-xs sm:text-sm text-gray-400 font-light mt-1">
+            Clique em um personagem para revelar suas conexões.
+        </p>
+    </header>
+
+    <!-- Main Workspace -->
+    <div class="flex flex-col lg:flex-row flex-1 gap-6 min-h-0">
+        
+        <!-- Área do Gráfico (Esquerda) -->
+        <div class="glass-panel rounded-2xl flex-1 relative overflow-hidden flex flex-col border border-white/10">
+            <div id="mynetwork"></div>
+            
+            <!-- Legenda Flutuante -->
+            <div class="absolute bottom-4 left-4 glass-panel p-3 rounded-lg text-xs font-sans text-gray-300 pointer-events-none">
+                <h3 class="font-bold text-[var(--accent)] mb-2 uppercase tracking-wider text-[10px]">Tipos de Conexão</h3>
+                <div class="flex items-center mb-1"><span class="legend-line" style="background: var(--alliance)"></span> Aliança</div>
+                <div class="flex items-center mb-1"><span class="legend-line" style="background: var(--conflict)"></span> Conflito</div>
+                <div class="flex items-center mb-1"><span class="legend-line dashed"></span> Segredo Compartilhado</div>
+                <div class="flex items-center"><span class="legend-line" style="background: var(--blood); height: 4px;"></span> Laço de Sangue</div>
+            </div>
+        </div>
+
+        <!-- Painel Lateral (Direita) -->
+        <div class="glass-panel rounded-2xl w-full lg:w-80 flex-shrink-0 p-6 flex flex-col overflow-y-auto border border-white/10 transition-all duration-300">
+            
+            <!-- Estado Inicial (Nenhum selecionado) -->
+            <div id="default-panel" class="flex-1 flex flex-col items-center justify-center text-center opacity-100 transition-opacity duration-300">
+                <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="mb-4 opacity-50">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                    <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+                <h2 class="text-lg text-[var(--accent)] font-semibold mb-2">O Dossiê</h2>
+                <p class="text-sm text-gray-400">Selecione um nó na rede para visualizar os detalhes e segredos do personagem.</p>
+            </div>
+
+            <!-- Detalhes do Personagem Selecionado -->
+            <div id="character-panel" class="hidden flex-col opacity-0 transition-opacity duration-300 h-full">
+                <div class="text-center mb-6 pb-4 border-b border-[var(--accent)]/30">
+                    <h2 id="char-name" class="text-2xl font-bold text-white mb-1">Nome</h2>
+                    <p id="char-role" class="text-xs uppercase tracking-widest text-[var(--accent)] font-sans">Papel</p>
+                </div>
+                
+                <div class="mb-6 flex-1">
+                    <h3 class="text-[10px] uppercase text-gray-500 font-sans tracking-widest mb-2">Perfil Psicológico</h3>
+                    <p id="char-bio" class="text-sm text-gray-300 italic leading-relaxed font-serif">
+                        Biografia aqui...
+                    </p>
+                </div>
+
+                <div>
+                    <h3 class="text-[10px] uppercase text-gray-500 font-sans tracking-widest mb-3">Conexões Diretas</h3>
+                    <ul id="char-connections" class="space-y-3 font-sans text-xs">
+                        <!-- Conexões injetadas via JS -->
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Dados dos personagens
+        const characterData = [
+            { id: 1, label: "Yumi Kairyu", role: "Protagonista", bio: "Uma musicista radicada na Europa tenta reconstruir a vida longe da violência, mas é forçada a reassumir sua identidade como Yumi, uma kunoichi e estrategista tática do Clã Kairyū, para salvar sua ordem da aniquilação enquanto luta contra a manifestação física do seu próprio trauma reprimido." },
+            { id: 2, label: "Ikari Yoko", role: "Protagonista", bio: "Após a morte de seu mestre adotivo, uma Kunoichi muda marcada por traumas da infância e sem linhagem de sangue Kairyu precisa assumir o comando do clã em colapso, enfrentando conspirações políticas e descobrindo suas verdadeiras origens espirituais para evitar a aniquilação do seu povo." },
+            { id: 3, label: "Madame Sofia", role: "Mentora", bio: "Antiquária cega que 'vê' o passado tocando objetos. Ela guia Elias relutantemente, sabendo que ele está destinado à ruína." },
+            { id: 4, label: "Lara Vance", role: "Irmã Mais Nova", bio: "Estudante de história que, sem saber, possui o artefato que todos estão procurando. O único porto seguro de Elias." },
+            { id: 5, label: "Marcus Thorne", role: "Aliado / Agente Duplo", bio: "Ex-policial expulso por corrupção. Ele salva a vida de Elias, mas suas verdadeiras lealdades são compradas a peso de ouro." },
+            { id: 6, label: "Kaoru", role: "Interesse Romântico", bio: "Cantora de jazz com uma voz hipnótica. Ela conhece os segredos da cidade melhor que o prefeito, mas esconde sua própria linhagem sombria." },
+            { id: 7, label: "Mestre Shen", role: "Guardião do Selo", bio: "Eremita recluso nos subúrbios. Ele fez um juramento de sangue séculos atrás e aguarda o retorno do herdeiro legítimo." },
+            { id: 8, label: "Caleb", role: "Executor / Capanga", bio: "Força bruta implacável a serviço de Victor. Ele não questiona ordens, apenas as executa com eficiência brutal." }, 
+            { id: 9, label: "Yumi", role: "Protagonista", bio: "Ninja do Clã Kairyu." }
+            ];
+
+        // Definindo os Nós (Nodes)
+        const nodes = new vis.DataSet(characterData.map(char => ({
+            id: char.id,
+            label: char.label,
+            shape: 'dot',
+            size: 25,
+            color: {
+                background: '#1a202c',
+                border: '#c4a173',
+                highlight: { background: '#c4a173', border: '#fff' }
+            },
+            font: { color: '#e2e8f0', face: 'Merriweather', size: 14, strokeWidth: 4, strokeColor: '#0d0f12' },
+            borderWidth: 2,
+            shadow: { enabled: true, color: 'rgba(0,0,0,0.8)', size: 10, x: 5, y: 5 }
+        })));
+
+        // Configuração de cores e estilos para tipos de arestas
+        const edgeStyles = {
+            'alliance': { color: '#10b981', width: 2, dashes: false, typeName: 'Aliança' },
+            'conflict': { color: '#ef4444', width: 2, dashes: false, typeName: 'Conflito' },
+            'secret':   { color: '#a855f7', width: 2, dashes: [5, 5], typeName: 'Segredo' },
+            'blood':    { color: '#f97316', width: 4, dashes: false, typeName: 'Sangue' }
+        };
+
+        // Dados dos Relacionamentos
+        const relationships = [
+            { from: 1, to: 4, relation: 'blood', label: 'Irmãos Protetores' },
+            { from: 1, to: 3, relation: 'alliance', label: 'Guia / Aprendiz' },
+            { from: 1, to: 2, relation: 'alliance', label: 'Tia Adotiva' },
+            { from: 1, to: 6, relation: 'secret', label: 'Atração Fatal' },
+            { from: 2, to: 8, relation: 'alliance', label: 'Líder / Cão de Guarda' },
+            { from: 3, to: 7, relation: 'secret', label: 'O Pacto de 1999' },
+            { from: 5, to: 1, relation: 'alliance', label: 'Informantes' },
+            { from: 5, to: 2, relation: 'secret', label: 'Dívida de Jogo' }, // Agente duplo
+            { from: 4, to: 6, relation: 'conflict', label: 'Desconfiança Mútua' },
+            { from: 2, to: 3, relation: 'conflict', label: 'Inimigos Antigos' },
+            { from: 9, to: 3, relation: 'secret', label: 'Conhece a Identidade' }
+        ];
+
+        // Definindo as Arestas (Edges)
+        const edges = new vis.DataSet(relationships.map((rel, index) => ({
+            id: `edge_${index}`,
+            from: rel.from,
+            to: rel.to,
+            label: rel.label,
+            font: { align: 'middle', color: '#94a3b8', size: 11, strokeWidth: 3, strokeColor: '#0d0f12', face: 'Arial' },
+            color: { 
+                color: edgeStyles[rel.relation].color, 
+                highlight: '#ffffff'
+            },
+            width: edgeStyles[rel.relation].width,
+            dashes: edgeStyles[rel.relation].dashes,
+            smooth: { type: 'continuous', roundness: 0.5 },
+            relationType: rel.relation // Metadado customizado
+        })));
+
+        const container = document.getElementById('mynetwork');
+        const data = { nodes: nodes, edges: edges };
+        
+        const options = {
+            interaction: {
+                hover: true,
+                tooltipDelay: 200,
+                zoomView: true,
+                dragView: true
+            },
+            physics: {
+                solver: 'forceAtlas2Based',
+                forceAtlas2Based: {
+                    gravitationalConstant: -100,
+                    centralGravity: 0.01,
+                    springLength: 200,
+                    springConstant: 0.05,
+                    damping: 0.4
+                },
+                stabilization: { iterations: 150 }
+            }
+        };
+
+        // Inicializar a rede
+        const network = new vis.Network(container, data, options);
+
+        const defaultPanel = document.getElementById('default-panel');
+        const charPanel = document.getElementById('character-panel');
+        
+        // Função para formatar as conexões no painel
+        function buildConnectionsHTML(nodeId) {
+            const connectedEdges = edges.get().filter(e => e.from === nodeId || e.to === nodeId);
+            let html = '';
+            
+            connectedEdges.forEach(e => {
+                const otherNodeId = (e.from === nodeId) ? e.to : e.from;
+                const otherNode = nodes.get(otherNodeId);
+                const style = edgeStyles[e.relationType];
+                
+                html += `
+                    <li class="flex items-center justify-between bg-[#1a202c] p-2 rounded border border-white/5">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full" style="background-color: ${style.color}"></span>
+                            <span class="text-white font-medium">${otherNode.label}</span>
+                        </div>
+                        <span class="text-[10px] text-gray-400 text-right max-w-[50%] truncate" title="${e.label}">${e.label}</span>
+                    </li>
+                `;
+            });
+            
+            return html || '<li class="text-gray-500 italic">Nenhuma conexão conhecida.</li>';
+        }
+
+        // Evento de Clique na Rede
+        network.on("click", function (params) {
+            if (params.nodes.length > 0) {
+                const clickedNodeId = params.nodes[0];
+                
+                // 1. Atualizar o Painel Lateral
+                const charData = characterData.find(c => c.id === clickedNodeId);
+                if(charData) {
+                    document.getElementById('char-name').innerText = charData.label;
+                    document.getElementById('char-role').innerText = charData.role;
+                    document.getElementById('char-bio').innerText = charData.bio;
+                    document.getElementById('char-connections').innerHTML = buildConnectionsHTML(clickedNodeId);
+                    
+                    defaultPanel.classList.add('hidden');
+                    defaultPanel.classList.remove('flex');
+                    charPanel.classList.remove('hidden');
+                    charPanel.classList.add('flex');
+                    
+                    setTimeout(() => {
+                        charPanel.classList.remove('opacity-0');
+                        charPanel.classList.add('opacity-100');
+                    }, 50);
+                }
+
+                // 2. Destacar Nós e Arestas na Tela (Efeito Visual)
+                const connectedNodes = network.getConnectedNodes(clickedNodeId);
+                const allNodes = nodes.get();
+                const allEdges = edges.get();
+
+                // Diminuir opacidade de quem não está conectado
+                const nodesToUpdate = allNodes.map(node => {
+                    if (node.id === clickedNodeId || connectedNodes.includes(node.id)) {
+                        return { id: node.id, color: { opacity: 1 }, font: { opacity: 1 } };
+                    } else {
+                        return { id: node.id, color: { opacity: 0.15 }, font: { opacity: 0.15 } };
+                    }
+                });
+                
+                const edgesToUpdate = allEdges.map(edge => {
+                    if (edge.from === clickedNodeId || edge.to === clickedNodeId) {
+                        return { id: edge.id, color: { opacity: 1 }, font: { opacity: 1 } };
+                    } else {
+                        return { id: edge.id, color: { opacity: 0.05 }, font: { opacity: 0 } };
+                    }
+                });
+
+                nodes.update(nodesToUpdate);
+                edges.update(edgesToUpdate);
+
+            } else {
+                // Clique no vazio: Resetar rede e painel
+                defaultPanel.classList.remove('hidden');
+                defaultPanel.classList.add('flex');
+                charPanel.classList.add('hidden');
+                charPanel.classList.remove('flex');
+                charPanel.classList.remove('opacity-100');
+                charPanel.classList.add('opacity-0');
+
+                // Restaurar opacidade original
+                const resetNodes = nodes.get().map(node => ({
+                    id: node.id, color: { opacity: 1 }, font: { opacity: 1 }
+                }));
+                const resetEdges = edges.get().map(edge => ({
+                    id: edge.id, color: { opacity: 1 }, font: { opacity: 1 }
+                }));
+
+                nodes.update(resetNodes);
+                edges.update(resetEdges);
+            }
+        });
+        
+        // Efeito cursor pointer sobre nós
+        network.on("hoverNode", function () {
+            network.canvas.body.container.style.cursor = 'pointer';
+        });
+        network.on("blurNode", function () {
+            network.canvas.body.container.style.cursor = 'default';
+        });
+
+    </script>
+</body>
+</html>
